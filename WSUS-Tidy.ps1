@@ -16,7 +16,7 @@ $b0 = 0
 
 $thisDir = try{ Split-Path -Parent $MyInvocation.MyCommand.Path} Catch {"C:\wsus-reports\transcripts\"}
 $logFile = "WSUSDeadCleanUP_$dateText.txt"
-$allComp = (Get-ADComputer -Filter *) + (Get-ADComputer -Filter * -SearchBase "DC=sticl,DC=xsthealth,DC=nhs,DC=uk" -server "sticl.xsthealth.nhs.uk")
+$allComp = (Get-ADComputer -Filter *) + (Get-ADComputer -Filter * -SearchBase "DC=contoso,DC=uk" -server "contoso.uk")
 $allCompCount = ($allComp).count
 Start-Transcript -Path $thisDir\$logFile
 
