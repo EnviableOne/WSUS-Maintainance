@@ -14,6 +14,9 @@ This script performs The WSUS Clean-up on all Servers and provides a report of t
 # WSUS-Tidy
 This Script Identifies information on WSUS servers that does not relate to Machines joined to the domain and optionally removes them from each WSUS Server
 
+#Get-WSUS-Settings
+This Script shows the Update Settings on a specified machine
+
 # Licence
    Copyright {2019} {Enviable Network Support and Solutions Ltd.}
 
