@@ -23,7 +23,7 @@
        Currentmonthupdates_<SERVERNAME>_<RUNTIME>.csv
        Summary by update of this months updates
 
-       AllServersStatus_<SERVERNAME>_<RUNTIME>.csv 
+       PerDeviceStatus_<SERVERNAME>_<RUNTIME>.csv 
        summary by target of update states with list of required
  
 .NOTES
@@ -50,32 +50,54 @@
     Original Code - https://nitishkumar.net/2017/03/08/wsus-and-powershell-audit-compliance-report-and-automatic-cleanup/
     Version 2.0   - https://github.com/EnviableOne/WSUS-Maintainance
 #>
+function Get-PatchTue 
+{ 
+<#  
+  .SYNOPSIS   
+    Get the Patch Tuesday of a month 
+  .PARAMETER month 
+   The month to check
+  .PARAMETER year 
+   The year to check
+  .EXAMPLE  
+   Get-PatchTue -month 6 -year 2015
+  .EXAMPLE  
+   Get-PatchTue June 2015
+#> 
+ 
+param( 
+[string]$month = (get-date).month, 
+[string]$year = (get-date).year
+) 
 
+$firstdayofmonth = [datetime] ([string]$month + "/1/" + [string]$year)
+(0..14 | % {$firstdayofmonth.adddays($_) } | ? {[int]$_.dayofweek -eq 2})[1]
+ 
+}
 [void][reflection.assembly]::LoadWithPartialName("Microsoft.UpdateServices.Administration")
-
-$firstdayofmonth = [datetime] ([string](get-date).AddMonths(-1).month + "/1/" + [string](get-date).year)
+[GC]::Collect()
+$Clock = [System.Diagnostics.Stopwatch]::StartNew();
 $DomainName = "."+ $env:USERDNSDOMAIN
-$dateText = (Get-Date).ToString('MM-dd-yyyy_hh-mm-ss')
+$dateText = (Get-Date).ToString('MM-dd-yyyy_hh-mm')
 $ReportPath = "C:\WSUS-Reports"
-
-# Create empty arrays to contain collected data.
-$UpdateStatus = @()
-$SummaryStatus = @()		
+$Current=$true
 
 # For WSUS servers catering servers
-$WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers","EMIS-SPOKE-3","EMIS-SPOKE-4","EMIS-SPOKE-5","EMIS-SPOKE-6","EMIS-SPOKE-7","EMIS-SPOKE-8","EMIS-SPOKE-9")
+$WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers")
+#$WSUSServers= ("wsus01-com")
 
 $ServerCount = ($WSUSServers | measure).count
 $CurServer = 0
+$UpdateDetails = @{}
 
 $thisDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logFile = "WSUSAuditReports_$dateText.txt"
 Start-Transcript -Path $thisDir\$logFile
 
 
-ForEach ($WSUSServer in $WSUSServers) {		
-    write-host "Working on $WSUSServer ..."	-foregroundcolor Green
-    $CurServer = $CurServer+1
+ForEach ($WSUSServer in $WSUSServers) {
+    $CurServer = $CurServer+1		
+    write-host "Working on $WSUSServer ($CurServer of $ServerCount) ..."	-foregroundcolor Green
 	Try {
         
 		Try {
@@ -84,60 +106,79 @@ ForEach ($WSUSServer in $WSUSServers) {
 		Catch {
 				$CurWSUSServer = [Microsoft.UpdateServices.Administration.AdminProxy]::getUpdateServer($WSUSServer,$false,80)
 		}
+		write-host "Connected and Fetching data for all computers connecting to it..."	-NoNewline
 		
-		$ComputerScope = New-Object Microsoft.UpdateServices.Administration.ComputerTargetScope
+        $ComputerScope = New-Object Microsoft.UpdateServices.Administration.ComputerTargetScope
+        $ComputerScope.IncludeDownstreamComputerTargets = $true
 		$UpdateScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
 		$UpdateScope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::LatestRevisionApproved
 		$updatescope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::All
-
-		$AllCompGroup = $CurWSUSServer.GetComputerTargetGroups() | Where {$_.Name -eq 'All Computers'}
-		$GroupTargets = $CurWSUSServer.getComputerTargetGroup($AllCompGroup.Id).GetComputerTargets()
-
-        write-host "Connected and Fetching the data from $WSUSServer for all computers connecting to it..."	
+        #$UpdateScope.TextIncludes = "monthly" -and "Windows 7"
+		
+		$GroupTargets = $CurWSUSServer.GetComputerTargets($computerScope)
         $Summaries = $CurWSUSServer.GetSummariesPerComputerTarget($updatescope, $computerscope)
         $CompCount = ($Summaries | measure).count
         $CurComp = 0
-
-		write-host "Data recieved from $WSUSServer for all computers connecting to it..."	
+        Write-host "done."	-ForegroundColor Gray
+        Write-Host "Generate $WSUSServer Reference Table ..." -NoNewline -ForegroundColor DarkGray
+        # Create empty objects to contain collected data.
+        $SummaryStatus = @()
+        $TargetHashes = @{}
+        foreach ($_ in $GroupTargets) {
+            $TargetHashes.add($_.id,$_)
+        }
+		Write-Host "done." -ForegroundColor Gray
 		Foreach ($Summary in $Summaries) 
 		{
 			Try {
                 $CurComp = $CurComp+1
-                write-host "Getting data from number $CurComp of $CompCount computers on $WSUSServer ($CurrServer of $ServerCount)..."	-foregroundcolor Yellow
-                Foreach ($Target in $GroupTargets) {
-				    If ($Summary.computertargetid -match $Target.id) {
-					    $ComputerTargetToUpdate = $CurWSUSServer.GetComputerTargetByName($Target.FullDomainName)                    
-					    $NeededUpdate = $ComputerTargetToUpdate.GetUpdateInstallationInfoPerUpdate() | where {($_.UpdateApprovalAction -eq "install") -and (($_.UpdateInstallationState -eq "Downloaded") -or ($_.UpdateInstallationState -eq "Notinstalled") -or ($_.UpdateInstallationState -eq "Failed"))	}
-					    $FailedUpdateReport = @()
-					    $NeededUpdateReport = @()
-					    $NeededUpdateDateReport = @()
-					    if ($NeededUpdate -ne $null) {
-				    	    foreach ($Update in $NeededUpdate) {						
-							    $NeededUpdateReport += ($CurWSUSServer.GetUpdate([Guid]$Update.updateid)).KnowledgebaseArticles
-							    $NeededUpdateDateReport += ($CurWSUSServer.GetUpdate([Guid]$Update.updateid)).ArrivalDate.ToString("dd/MM/yyyy ")
-						    }
-					    }
-    					$Target | select -ExpandProperty FullDomainName                    
-	    				$TargetData = New-Object -TypeName PSObject
-		    			$TargetData | add-member -type Noteproperty -Name Server -Value (($Target | select -ExpandProperty FullDomainName) -replace $DomainName, "")
-			    		$TargetData | add-member -type Noteproperty -Name NotInstalledCount -Value $Summary.NotInstalledCount
-				    	$TargetData | add-member -type Noteproperty -Name NotApplicable -Value $Summary.NotApplicableCount
-					    $TargetData | add-member -type Noteproperty -Name DownloadedCount -Value $Summary.DownloadedCount
-					    $TargetData | add-member -type Noteproperty -Name InstalledCount -Value $Summary.InstalledCount
-					    $TargetData | add-member -type Noteproperty -Name InstalledPendingRebootCount -Value $Summary.InstalledPendingRebootCount
-					    $TargetData | add-member -type Noteproperty -Name FailedCount -Value $Summary.FailedCount
-					    $TargetData | add-member -type Noteproperty -Name NeededCount -Value ($NeededUpdate | measure).count
-					    $TargetData | add-member -type Noteproperty -Name Needed -Value $NeededUpdateReport
-					    $TargetData | add-member -type Noteproperty -Name LastSyncTime -Value $Target.LastSyncTime
-					    $TargetData | add-member -type Noteproperty -Name IPAddress -Value $Target.IPAddress
-					    $TargetData | add-member -type Noteproperty -Name OS -Value $Target.OSDescription
-					    $TargetData | add-member -type Noteproperty -Name NeededDate -Value $NeededUpdateDateReport
-					    $SummaryStatus += $TargetData
+                write-host "Parsing data for Target $CurComp of $CompCount on $WSUSServer ($CurServer of $ServerCount)..."	-foregroundcolor Yellow -NoNewline
+                $Target = $TargetHashes[$Summary.ComputerTargetId]
+                $ComputerTargetToUpdate = $Target
+                $neededScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
+                $neededScope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Downloaded,[Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Failed,[Microsoft.UpdateServices.Administration.UpdateInstallationStates]::NotInstalled
+                $neededScope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::LatestRevisionApproved 
+				$NeededUpdate = $ComputerTargetToUpdate.GetUpdateInstallationInfoPerUpdate($neededScope)  | where {($_.UpdateApprovalAction -eq "install") -and (($_.UpdateInstallationState -eq "Downloaded") -or ($_.UpdateInstallationState -eq "Notinstalled") -or ($_.UpdateInstallationState -eq "Failed"))	}
+				$NeededUpdateReport = @()
+				$NeededUpdateDateReport = @()
+				if ($NeededUpdate -ne $null) {
+                    write-Host "$($NeededUpdate.count) Updates Required ..." -nonewline -foregroundcolor DarkGray
+				    foreach ($Update in $NeededUpdate) {
+                        if ($UpdateDetails.ContainsKey([Guid]$Update.updateid)){
+					     $NeededUpdateReport += $UpdateDetails[[Guid]$Update.updateid].KnowledgebaseArticles
+						 $NeededUpdateDateReport += $UpdateDetails[[Guid]$Update.updateid].ArrivalDate.ToString("dd/MM/yyyy ")
                         }
-				    }
-			    }
+                        else{
+                         $NeedUpd = $CurWSUSServer.GetUpdate([Guid]$Update.updateid) 						
+					     $NeededUpdateReport += $NeedUpd.KnowledgebaseArticles
+						 $NeededUpdateDateReport += $NeedUpd.ArrivalDate.ToString("dd/MM/yyyy ")
+                         $updatedetails.add([Guid]$Update.updateid,$needUpd)
+                        }
+					}
+				}
+                $TargetData = New-Object -TypeName PSObject
+		    	if ($Target.ParentServerId -eq '00000000-0000-0000-0000-000000000000'){$Parent = $WSUSServer}else{$Parent = ($target.GetParentServer().FullDomainName -replace $DomainName, "")}
+                $TargetData | add-member -Type NoteProperty -Name WSUSServer -Value $Parent
+		    	$TargetData | add-member -type Noteproperty -Name Device -Value (($Target | select -ExpandProperty FullDomainName) -replace $DomainName, "")
+			    $TargetData | add-member -type Noteproperty -Name NotInstalledCount -Value $Summary.NotInstalledCount
+				$TargetData | add-member -type Noteproperty -Name NotApplicable -Value $Summary.NotApplicableCount
+				$TargetData | add-member -type Noteproperty -Name DownloadedCount -Value $Summary.DownloadedCount
+				$TargetData | add-member -type Noteproperty -Name InstalledCount -Value $Summary.InstalledCount
+				$TargetData | add-member -type Noteproperty -Name InstalledPendingRebootCount -Value $Summary.InstalledPendingRebootCount
+				$TargetData | add-member -type Noteproperty -Name FailedCount -Value $Summary.FailedCount
+				$TargetData | add-member -type Noteproperty -Name NeededCount -Value ($NeededUpdate | measure).count
+				$TargetData | add-member -type Noteproperty -Name Needed -Value $NeededUpdateReport
+				$TargetData | add-member -type Noteproperty -Name LastSyncTime -Value $Target.LastSyncTime
+				$TargetData | add-member -type Noteproperty -Name IPAddress -Value $Target.IPAddress
+				$TargetData | add-member -type Noteproperty -Name OS -Value $Target.OSDescription
+				$TargetData | add-member -type Noteproperty -Name NeededDate -Value $NeededUpdateDateReport
+				$SummaryStatus += $TargetData 
+                Write-Host "done." -ForegroundColor Gray
+            }
             Catch [Microsoft.UpdateServices.Administration.WsusObjectNotFoundException]{
-                Write-host "Target not found - checking for issues" -foregroundcolor Magenta
+                $CurHost = $TargetHashes[$Summary.ComputerTargetId] | select -expandProperty FullDomainName
+                $CurHost = $CurHost.substring(0,$CurHost.indexof("."))
+                Write-host "Target not found - $CurHost checking for issues" -foregroundcolor Magenta
                 #Primary AD Lookup ($env:userdomain)
                 Try { 
                     Get-ADComputer -identity $Summary.computertargetid | out-null
@@ -154,21 +195,61 @@ ForEach ($WSUSServer in $WSUSServers) {
                         $ComputerTargetToUpdate.Delete()
                     }
                 }
-                continue;
-            }
-		}
-		$SummaryStatus | select-object server,NeededCount,LastSyncTime,InstalledPendingRebootCount,NotInstalledCount,DownloadedCount,InstalledCount,FailedCount,@{Name="KB Numbers"; Expression = {$_.Needed}},@{Name="Arrival Date"; Expression = {$_.NeededDate}},NotApplicable,IPAddress,OS|export-csv -notype ("$ReportPath\AllServersStatus_$WSUSServer" + "_$dateText.csv")
+		    }
+        }
+        Write-Host "Writing Summary for $WSUSServer to report ..." -nonewline -foregroundcolor DarkGray
+		$SummaryStatus | select-object WSUSServer,Device,NeededCount,LastSyncTime,InstalledPendingRebootCount,NotInstalledCount,DownloadedCount,InstalledCount,FailedCount,@{Name="KB Numbers"; Expression = {$_.Needed}},@{Name="Arrival Date"; Expression = {$_.NeededDate}},NotApplicable,IPAddress,OS|export-csv -notype ("$ReportPath\PerDeviceStatus_$WSUSServer" + "_$dateText.csv")
+		Write-Host "done." -ForegroundColor Gray
 		
-		write-host "Connected with $WSUSServer and finding patches for last month schedule .." -NoNewline	
-		# Find patches from 1st day of (M-2) month to 2nd Monday of (M-1) month 
-		$updatescope.FromArrivalDate = [datetime](get-date).Addmonths(-2).AddDays(-((Get-date).day-1))
-
-		$updatescope.ToArrivalDate = [datetime](0..31 | % {$firstdayofmonth.adddays($_) } | ? {$_.dayofweek -like "Mon*"})[1]
-		#[datetime](0..31 | % {$firstdayofmonth.adddays($_) } | ? {$_.dayofweek -like "Mon*"})[1]
-
-		$PerUpdateFile = "$ReportPath\Currentmonthupdates_"+$WSUSServer+"_$dateText.csv"
+		# Find The most recent 2 patch tuesdays
+        $ToYear = (Get-date).Year
+        if ((Get-Date) -lt (Get-PatchTue)){
+         Switch ((get-date).Month){
+          1 {
+           $ToMonth = 12
+           $ToYear--
+           $FromMonth=11
+           $FromYear = $ToYear--
+          }
+          2 {
+           $ToMonth = 1
+           $FromMonth = 12
+           $FromYear = $ToYear--
+          }
+          Default{
+           $ToMonth = (get-date).Month -1
+           $FromMonth = $ToMonth--
+           $FromYear = $ToYear
+          }
+         }
+        }
+        Else {
+         If ((get-date).Month -eq 1){ 
+          $ToMonth = (get-date).Month
+          $FromMonth = 12
+          $FromYear = $ToYear--
+         }
+         Else {
+          $ToMonth = (get-date).Month
+          $FromMonth = $ToMonth--
+          $FromYear = $ToYear
+         }
+        }
+                
+        If ($Current){
+		 $updatescope.FromArrivalDate = Get-PatchTue -month $ToMonth -year $ToYear
+         $text = "Since Last Patch Tuesday"
+        }
+        Else {
+         $updatescope.FromArrivalDate = Get-PatchTue -month $FromMonth -year $FromYear
+		 $updatescope.ToArrivalDate = Get-PatchTue -month $ToMonth -year $ToYear
+         $text = "for the month to last Patch Tuesday"
+        }
+        $PerUpdateFile = "$ReportPath\Currentmonthupdates_"+$WSUSServer+"_$dateText.csv"
+        #collect Summaries per patch from the update server
+        write-host "Connected with $WSUSServer and finding patches for $text .." -NoNewline	
 		$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) |select-object @{L='UpdateTitle';E={($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).Title}},@{L='Arrival Date';E={($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).ArrivalDate}},@{L='KB Article';E={($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).KnowledgebaseArticles}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
-		write-host "done."
+		write-host "done." -ForegroundColor Green
     }
 	Catch [Exception] {
 		write-host $_.Exception.GetType().FullName -foregroundcolor Red
@@ -176,6 +257,12 @@ ForEach ($WSUSServer in $WSUSServers) {
         continue;
 	}
 }
-		
+$Clock.Stop()
+Write-Host "Total Servers checked : " -NoNewline -ForegroundColor Green -BackgroundColor Black
+Write-Host $CurServer -ForegroundColor Yellow -backgroundcolor Black
+Write-Host "Different updates neded : " -NoNewline -ForegroundColor Green -BackgroundColor Black
+Write-Host $UpdateDetails.count	-ForegroundColor Yellow	-BackgroundColor Black
+Write-Host "Time elapsed : " -NoNewline -ForegroundColor Green -BackgroundColor Black
+Write-Host $Clock.elapsed.tostring("G") -NoNewline -ForegroundColor Yellow -BackgroundColor Black
 Stop-Transcript
 notepad $thisDir\$logFile
