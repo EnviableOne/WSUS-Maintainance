@@ -31,3 +31,6 @@ This Script shows the Update Settings on a specified machine
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+# Feed my Caffine Addiction
+if any of this is usefull : [![ko-fi](https://www.ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z21XJ08)
