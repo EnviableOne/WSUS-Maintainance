@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     This script performs an audit on WSUS servers in the Local Domain
  
@@ -23,16 +23,17 @@
        Currentmonthupdates_<SERVERNAME>_<RUNTIME>.csv
        Summary by update of this months updates
 
-       PerDeviceStatus_<SERVERNAME>_<RUNTIME>.csv 
+       AllServersStatus_<SERVERNAME>_<RUNTIME>.csv 
        summary by target of update states with list of required
  
 .NOTES
     Author        Version   Date
+    Peter Marquis 2.1       27 August 2020
     Peter Marquis 2.0       13 March 2019
     Nitish Kumar  1.2       21 May 2017
     
 .LICENCE
-   Copyright {2019} {Enviable Network Support and Solutions Ltd.}
+   Copyright {2020} {Enviable Network Support and Solutions Ltd.}
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -48,7 +49,7 @@
 
 .LINK
     Original Code - https://nitishkumar.net/2017/03/08/wsus-and-powershell-audit-compliance-report-and-automatic-cleanup/
-    Version 2.0   - https://github.com/EnviableOne/WSUS-Maintainance
+    Version 2.1   - https://github.com/EnviableOne/WSUS-Maintainance
 #>
 function Get-PatchTue 
 { 
@@ -84,7 +85,7 @@ $Current=$true
 
 # For WSUS servers catering servers
 $WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers")
-#$WSUSServers= ("wsus01-com")
+#$WSUSServers= ("wsus-pcs")
 
 $ServerCount = ($WSUSServers | measure).count
 $CurServer = 0
@@ -172,6 +173,8 @@ ForEach ($WSUSServer in $WSUSServers) {
 				$TargetData | add-member -type Noteproperty -Name IPAddress -Value $Target.IPAddress
 				$TargetData | add-member -type Noteproperty -Name OS -Value $Target.OSDescription
 				$TargetData | add-member -type Noteproperty -Name NeededDate -Value $NeededUpdateDateReport
+                $up2Date = IF(($NeededUpdate | measure).count -eq 0){1}Else{0}
+                $TargetData | add-member -type NoteProperty -Name Up2Date -Value $up2Date
 				$SummaryStatus += $TargetData 
                 Write-Host "done." -ForegroundColor Gray
             }
@@ -198,9 +201,14 @@ ForEach ($WSUSServer in $WSUSServers) {
 		    }
         }
         Write-Host "Writing Summary for $WSUSServer to report ..." -nonewline -foregroundcolor DarkGray
-		$SummaryStatus | select-object WSUSServer,Device,NeededCount,LastSyncTime,InstalledPendingRebootCount,NotInstalledCount,DownloadedCount,InstalledCount,FailedCount,@{Name="KB Numbers"; Expression = {$_.Needed}},@{Name="Arrival Date"; Expression = {$_.NeededDate}},NotApplicable,IPAddress,OS|export-csv -notype ("$ReportPath\PerDeviceStatus_$WSUSServer" + "_$dateText.csv")
+		$SummaryStatus | select-object WSUSServer,Device,NeededCount,LastSyncTime,InstalledPendingRebootCount,NotInstalledCount,DownloadedCount,InstalledCount,FailedCount,@{Name="KB Numbers"; Expression = {$_.Needed}},@{Name="Arrival Date"; Expression = {$_.NeededDate}},NotApplicable,IPAddress,OS,Up2Date|export-csv -notype ("$ReportPath\PerDeviceStatus_$WSUSServer" + "_$dateText.csv")
 		Write-Host "done." -ForegroundColor Gray
 		
+        #Create lookup list for Needed Updates
+        Write-Host "Writing Needed Updates for $WSUSServer to report ..." -nonewline -foregroundcolor DarkGray
+        $updatedetails.Values | select ArrivalDate,Title,UpdateType,@{L="Classification";E={$_.UpdateClassificationTitle}},MsrcSeverity,@{L="Company";E={$_.CompanyTitles}},@{L="ProductFamily";E={$_.ProductFamilyTitles}},@{L="ProductTitle";E={$_.ProductTitles}},Description,@{L="KBArticle";E={$_.KnowledgebaseArticles}},@{L="SecurityBulletin";E={$_.SecurityBulletins}},IsLatestRevision,IsApproved,@{L="AdditionalInformationUrl";E={$_.AdditionalInformationUrls}} | Export-Csv -notype ("$ReportPath\Updates_Required_$WSUSServer" + "_$dateText.csv")
+        Write-Host "done." -ForegroundColor Gray
+
 		# Find The most recent 2 patch tuesdays
         $ToYear = (Get-date).Year
         if ((Get-Date) -lt (Get-PatchTue)){
@@ -235,7 +243,8 @@ ForEach ($WSUSServer in $WSUSServers) {
           $FromYear = $ToYear
          }
         }
-                
+        
+        #Set Time Constraints for Update Report        
         If ($Current){
 		 $updatescope.FromArrivalDate = Get-PatchTue -month $ToMonth -year $ToYear
          $text = "Since Last Patch Tuesday"
@@ -245,10 +254,11 @@ ForEach ($WSUSServer in $WSUSServers) {
 		 $updatescope.ToArrivalDate = Get-PatchTue -month $ToMonth -year $ToYear
          $text = "for the month to last Patch Tuesday"
         }
-        $PerUpdateFile = "$ReportPath\Currentmonthupdates_"+$WSUSServer+"_$dateText.csv"
+                
         #collect Summaries per patch from the update server
+        $PerUpdateFile = "$ReportPath\Currentmonthupdates_"+$WSUSServer+"_$dateText.csv"
         write-host "Connected with $WSUSServer and finding patches for $text .." -NoNewline	
-		$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) |select-object @{L='UpdateTitle';E={($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).Title}},@{L='Arrival Date';E={($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).ArrivalDate}},@{L='KB Article';E={($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).KnowledgebaseArticles}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
+		$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) | select-object @{L='UpdateTitle';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).Title}},@{L='Arrival Date';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).ArrivalDate}},@{L='KB Article';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).KnowledgebaseArticles}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
 		write-host "done." -ForegroundColor Green
     }
 	Catch [Exception] {
@@ -260,9 +270,9 @@ ForEach ($WSUSServer in $WSUSServers) {
 $Clock.Stop()
 Write-Host "Total Servers checked : " -NoNewline -ForegroundColor Green -BackgroundColor Black
 Write-Host $CurServer -ForegroundColor Yellow -backgroundcolor Black
-Write-Host "Different updates neded : " -NoNewline -ForegroundColor Green -BackgroundColor Black
+Write-Host "Different updates needed : " -NoNewline -ForegroundColor Green -BackgroundColor Black
 Write-Host $UpdateDetails.count	-ForegroundColor Yellow	-BackgroundColor Black
 Write-Host "Time elapsed : " -NoNewline -ForegroundColor Green -BackgroundColor Black
-Write-Host $Clock.elapsed.tostring("G") -NoNewline -ForegroundColor Yellow -BackgroundColor Black
+Write-Host $Clock.elapsed.tostring("G") -ForegroundColor Yellow -BackgroundColor Black
 Stop-Transcript
 notepad $thisDir\$logFile
