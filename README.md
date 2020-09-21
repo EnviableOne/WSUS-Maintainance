@@ -2,7 +2,7 @@
 Powershell Module to Audit and Maintain WSUS In an enterprise environment
 
 This is a collection of Powershell Scripts with specific tasks to maintain the WSUS configuration
-the originals were posted By Nitesh Kumar on his blog https://nitishkumar.net/ (marked with \*)
+the originals were posted By Nitish Kumar on his blog https://nitishkumar.net/ (marked with \*)
 the functions of them are largley unchanged, a lot of variables have been renamed for clarity, and a few modifications have been made to improve error handling and speed. <br>
 The remaining script(s) have been inspired by the originals, but are all my own work.
 
