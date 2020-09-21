@@ -84,7 +84,7 @@ $ReportPath = "C:\WSUS-Reports"
 $Current=$true
 
 # For WSUS servers catering servers
-$WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers")
+$WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers","wsus-pcs2")
 #$WSUSServers= ("wsus-pcs")
 
 $ServerCount = ($WSUSServers | measure).count
@@ -258,8 +258,8 @@ ForEach ($WSUSServer in $WSUSServers) {
         #collect Summaries per patch from the update server
         $PerUpdateFile = "$ReportPath\Currentmonthupdates_"+$WSUSServer+"_$dateText.csv"
         write-host "Connected with $WSUSServer and finding patches for $text .." -NoNewline	
-	$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) | select-object @{L='UpdateTitle';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).Title}},@{L='Arrival Date';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).ArrivalDate}},@{L='KB Article';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).KnowledgebaseArticles}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
-	write-host "done." -ForegroundColor Green
+		$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) | select-object @{L='UpdateTitle';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).Title}},@{L='Arrival Date';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).ArrivalDate}},@{L='KB Article';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).KnowledgebaseArticles}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
+		write-host "done." -ForegroundColor Green
     }
 	Catch [Exception] {
 		write-host $_.Exception.GetType().FullName -foregroundcolor Red
