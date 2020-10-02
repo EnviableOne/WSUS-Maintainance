@@ -80,8 +80,8 @@ $firstdayofmonth = [datetime] ([string]$month + "/1/" + [string]$year)
 $Clock = [System.Diagnostics.Stopwatch]::StartNew();
 $DomainName = "."+ $env:USERDNSDOMAIN
 $dateText = (Get-Date).ToString('MM-dd-yyyy_hh-mm')
-$ReportPath = "C:\WSUS-Reports"
-$Current=$true
+$ReportPath = "C:\WSUS-Reports"                         #Path to store reports
+$Current=$true                                          #True for since Patch-Tue, false for last full patch month
 
 # For WSUS servers catering servers
 $WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers","wsus-pcs2")
@@ -93,6 +93,9 @@ $UpdateDetails = @{}
 
 $thisDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logFile = "WSUSAuditReports_$dateText.txt"
+If(!(Test-Path $ReportPath)){
+  New-item -path $ReportPath -ItemType Directory -Force 
+}
 Start-Transcript -Path $thisDir\$logFile
 
 
@@ -134,15 +137,18 @@ ForEach ($WSUSServer in $WSUSServers) {
 			Try {
                 $CurComp = $CurComp+1
                 write-host "Parsing data for Target $CurComp of $CompCount on $WSUSServer ($CurServer of $ServerCount)..."	-foregroundcolor Yellow -NoNewline
+                #pull target from hashtable
                 $Target = $TargetHashes[$Summary.ComputerTargetId]
                 $ComputerTargetToUpdate = $Target
+                #set update scope
                 $neededScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
                 $neededScope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Downloaded,[Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Failed,[Microsoft.UpdateServices.Administration.UpdateInstallationStates]::NotInstalled
                 $neededScope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::LatestRevisionApproved 
 				$NeededUpdate = $ComputerTargetToUpdate.GetUpdateInstallationInfoPerUpdate($neededScope)  | where {($_.UpdateApprovalAction -eq "install") -and (($_.UpdateInstallationState -eq "Downloaded") -or ($_.UpdateInstallationState -eq "Notinstalled") -or ($_.UpdateInstallationState -eq "Failed"))	}
 				$NeededUpdateReport = @()
 				$NeededUpdateDateReport = @()
-				if ($NeededUpdate -ne $null) {
+				
+                if ($NeededUpdate -ne $null) {
                     write-Host "$($NeededUpdate.count) Updates Required ..." -nonewline -foregroundcolor DarkGray
 				    foreach ($Update in $NeededUpdate) {
                         if ($UpdateDetails.ContainsKey([Guid]$Update.updateid)){
@@ -157,6 +163,7 @@ ForEach ($WSUSServer in $WSUSServers) {
                         }
 					}
 				}
+                #Generate report Record
                 $TargetData = New-Object -TypeName PSObject
 		    	if ($Target.ParentServerId -eq '00000000-0000-0000-0000-000000000000'){$Parent = $WSUSServer}else{$Parent = ($target.GetParentServer().FullDomainName -replace $DomainName, "")}
                 $TargetData | add-member -Type NoteProperty -Name WSUSServer -Value $Parent
@@ -204,7 +211,7 @@ ForEach ($WSUSServer in $WSUSServers) {
 		$SummaryStatus | select-object WSUSServer,Device,NeededCount,LastSyncTime,InstalledPendingRebootCount,NotInstalledCount,DownloadedCount,InstalledCount,FailedCount,@{Name="KB Numbers"; Expression = {$_.Needed}},@{Name="Arrival Date"; Expression = {$_.NeededDate}},NotApplicable,IPAddress,OS,Up2Date|export-csv -notype ("$ReportPath\PerDeviceStatus_$WSUSServer" + "_$dateText.csv")
 		Write-Host "done." -ForegroundColor Gray
 		
-        #Create lookup list for Needed Updates
+        #Create lookup report for Needed Updates
         Write-Host "Writing Needed Updates for $WSUSServer to report ..." -nonewline -foregroundcolor DarkGray
         $updatedetails.Values | select ArrivalDate,Title,UpdateType,@{L="Classification";E={$_.UpdateClassificationTitle}},MsrcSeverity,@{L="Company";E={$_.CompanyTitles}},@{L="ProductFamily";E={$_.ProductFamilyTitles}},@{L="ProductTitle";E={$_.ProductTitles}},Description,@{L="KBArticle";E={$_.KnowledgebaseArticles}},@{L="SecurityBulletin";E={$_.SecurityBulletins}},IsLatestRevision,IsApproved,@{L="AdditionalInformationUrl";E={$_.AdditionalInformationUrls}} | Export-Csv -notype ("$ReportPath\Updates_Required_$WSUSServer" + "_$dateText.csv")
         Write-Host "done." -ForegroundColor Gray
@@ -268,6 +275,7 @@ ForEach ($WSUSServer in $WSUSServers) {
 	}
 }
 $Clock.Stop()
+#output run summary
 Write-Host "Total Servers checked : " -NoNewline -ForegroundColor Green -BackgroundColor Black
 Write-Host $CurServer -ForegroundColor Yellow -backgroundcolor Black
 Write-Host "Different updates needed : " -NoNewline -ForegroundColor Green -BackgroundColor Black
