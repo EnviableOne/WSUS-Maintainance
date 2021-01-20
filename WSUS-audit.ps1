@@ -16,6 +16,7 @@
 .INPUTS
     $WSUSServers List of WSUS Server names (must be resovable)
     $ReportPath  where to create the reports
+    $SecureConnect Is WSUS configured to connect over a secure channel
  
 .OUTPUTS
     comma seperated variable file reports for each server:
@@ -28,12 +29,13 @@
  
 .NOTES
     Author        Version   Date
+    Peter Marquis 2.2       20 January 2021
     Peter Marquis 2.1       27 August 2020
     Peter Marquis 2.0       13 March 2019
     Nitish Kumar  1.2       21 May 2017
     
 .LICENCE
-   Copyright {2020} {Enviable Network Support and Solutions Ltd.}
+   Copyright {2021} {Enviable Network Support and Solutions Ltd.}
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -49,7 +51,7 @@
 
 .LINK
     Original Code - https://nitishkumar.net/2017/03/08/wsus-and-powershell-audit-compliance-report-and-automatic-cleanup/
-    Version 2.1   - https://github.com/EnviableOne/WSUS-Maintainance
+    Version 2.2   - https://github.com/EnviableOne/WSUS-Maintainance
 #>
 function Get-PatchTue 
 { 
@@ -82,10 +84,11 @@ $DomainName = "."+ $env:USERDNSDOMAIN
 $dateText = (Get-Date).ToString('MM-dd-yyyy_hh-mm')
 $ReportPath = "C:\WSUS-Reports"                         #Path to store reports
 $Current=$true                                          #True for since Patch-Tue, false for last full patch month
+$SecureConnect=$false                                   #WSUS is configured to Connect using a secure channel
 
-# For WSUS servers catering servers
-$WSUSServers = ("wsus-pcs","wsus01-com","wsus-servers","wsus-pcs2")
-#$WSUSServers= ("wsus-pcs")
+# For WSUS Tier 1 Servers 
+$WSUSServers = ("wsus-pcs","wsus-com","wsus-servers")
+#$WSUSServers= ("wsus-com")
 
 $ServerCount = ($WSUSServers | measure).count
 $CurServer = 0
@@ -103,23 +106,30 @@ ForEach ($WSUSServer in $WSUSServers) {
     $CurServer = $CurServer+1		
     write-host "Working on $WSUSServer ($CurServer of $ServerCount) ..."	-foregroundcolor Green
 	Try {
-        
-		Try {
+        if($SecureConnect){
+         Try {
+				$CurWSUSServer = [Microsoft.UpdateServices.Administration.AdminProxy]::getUpdateServer($WSUSServer,$true,8531)
+		 }
+		 Catch {
+				$CurWSUSServer = [Microsoft.UpdateServices.Administration.AdminProxy]::getUpdateServer($WSUSServer,$true,443)
+		 }
+        }
+        Else{ 
+		 Try {
 				$CurWSUSServer = [Microsoft.UpdateServices.Administration.AdminProxy]::getUpdateServer($WSUSServer,$false,8530)
-		}
-		Catch {
+		 }
+		 Catch {
 				$CurWSUSServer = [Microsoft.UpdateServices.Administration.AdminProxy]::getUpdateServer($WSUSServer,$false,80)
+		 }
 		}
-		write-host "Connected and Fetching data for all computers connecting to it..."	-NoNewline
+        write-host "Connected and Fetching data for all computers connecting to it..."	-NoNewline
 		
         $ComputerScope = New-Object Microsoft.UpdateServices.Administration.ComputerTargetScope
         $ComputerScope.IncludeDownstreamComputerTargets = $true
 		$UpdateScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
 		$UpdateScope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::LatestRevisionApproved
 		$updatescope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::All
-        #$UpdateScope.TextIncludes = "monthly" -and "Windows 7"
-		
-		$GroupTargets = $CurWSUSServer.GetComputerTargets($computerScope)
+        	$GroupTargets = $CurWSUSServer.GetComputerTargets($computerScope)
         $Summaries = $CurWSUSServer.GetSummariesPerComputerTarget($updatescope, $computerscope)
         $CompCount = ($Summaries | measure).count
         $CurComp = 0
@@ -136,10 +146,11 @@ ForEach ($WSUSServer in $WSUSServers) {
 		{
 			Try {
                 $CurComp = $CurComp+1
-                write-host "Parsing data for Target $CurComp of $CompCount on $WSUSServer ($CurServer of $ServerCount)..."	-foregroundcolor Yellow -NoNewline
                 #pull target from hashtable
                 $Target = $TargetHashes[$Summary.ComputerTargetId]
                 $ComputerTargetToUpdate = $Target
+                $Device = (($Target | select -ExpandProperty FullDomainName) -replace $DomainName, "")
+                write-host "Parsing data for $Device ($CurComp of $CompCount) on $WSUSServer ($CurServer of $ServerCount)..."	-foregroundcolor Yellow -NoNewline
                 #set update scope
                 $neededScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
                 $neededScope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Downloaded,[Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Failed,[Microsoft.UpdateServices.Administration.UpdateInstallationStates]::NotInstalled
@@ -167,7 +178,7 @@ ForEach ($WSUSServer in $WSUSServers) {
                 $TargetData = New-Object -TypeName PSObject
 		    	if ($Target.ParentServerId -eq '00000000-0000-0000-0000-000000000000'){$Parent = $WSUSServer}else{$Parent = ($target.GetParentServer().FullDomainName -replace $DomainName, "")}
                 $TargetData | add-member -Type NoteProperty -Name WSUSServer -Value $Parent
-		    	$TargetData | add-member -type Noteproperty -Name Device -Value (($Target | select -ExpandProperty FullDomainName) -replace $DomainName, "")
+		    	$TargetData | add-member -type Noteproperty -Name Device -Value $device
 			    $TargetData | add-member -type Noteproperty -Name NotInstalledCount -Value $Summary.NotInstalledCount
 				$TargetData | add-member -type Noteproperty -Name NotApplicable -Value $Summary.NotApplicableCount
 				$TargetData | add-member -type Noteproperty -Name DownloadedCount -Value $Summary.DownloadedCount
@@ -265,7 +276,7 @@ ForEach ($WSUSServer in $WSUSServers) {
         #collect Summaries per patch from the update server
         $PerUpdateFile = "$ReportPath\Currentmonthupdates_"+$WSUSServer+"_$dateText.csv"
         write-host "Connected with $WSUSServer and finding patches for $text .." -NoNewline	
-		$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) | select-object @{L='UpdateTitle';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).Title}},@{L='Arrival Date';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).ArrivalDate}},@{L='KB Article';E={(If($UpdateDetails.containsKey([guid]$_.UpdateID)){$UpdateDetails[[Guid]$_.UpdateID]}Else{$CurWSUSServer.GetUpdate([guid]$_.UpdateId)}).KnowledgebaseArticles}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
+		$CurWSUSServer.GetSummariesPerUpdate($updatescope,$computerscope) | Select-Object @{L='UpdateTitle';E={If($UpdateDetails.containsKey([guid]$_.UpdateID)){($UpdateDetails[[Guid]$_.UpdateID]).title}Else{($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).title}}},@{L='Arrival Date';E={If($UpdateDetails.containsKey([guid]$_.UpdateID)){($UpdateDetails[[Guid]$_.UpdateID]).ArrivalDate}Else{($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).ArrivalDate}}},@{L='KB Article';E={If($UpdateDetails.containsKey([guid]$_.UpdateID)){($UpdateDetails[[Guid]$_.UpdateID]).KnowledgebaseArticles}Else{($CurWSUSServer.GetUpdate([guid]$_.UpdateId)).KnowledgebaseArticles}}},@{L='Needed';E={($_.DownloadedCount+$_.NotInstalledCount)}},DownloadedCount,NotApplicableCount,NotInstalledCount,InstalledCount,FailedCount | Export-csv -Notype $PerUpdateFile
 		write-host "done." -ForegroundColor Green
     }
 	Catch [Exception] {
