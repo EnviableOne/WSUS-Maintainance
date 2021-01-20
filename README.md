@@ -1,5 +1,5 @@
 # WSUS-Maintainance
-Powershell Module to Audit and Maintain WSUS In an enterprise environment
+Powershell scripts to Audit and Maintain WSUS In an enterprise environment
 
 This is a collection of Powershell Scripts with specific tasks to maintain the WSUS configuration
 the originals were posted By Nitish Kumar on his blog https://nitishkumar.net/ (marked with \*)
@@ -10,16 +10,16 @@ The remaining script(s) have been inspired by the originals, but are all my own 
 this script generates reports based on the Update deployment state of each server and each target connected to them
 
 # WSUS-Cleanup\*
-This script performs The WSUS Clean-up on all Servers and provides a report of the results
+This script performs a customisable WSUS Clean-up on all Servers and provides a report of the results
 
 # WSUS-Tidy
-This Script Identifies information on WSUS servers that does not relate to Machines joined to the domain and optionally removes them from each WSUS Server
+This Script Identifies information on WSUS servers that does not relate to Machines joined to the AD domain and optionally removes them from each WSUS Server
 
 # Get-WSUS-Settings
 This Script shows the Update Settings on a specified machine
 
 # Licence
-   Copyright {2020} {Enviable Network Support and Solutions Ltd.}
+   Copyright {2021} {Enviable Network Support and Solutions Ltd.}
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -34,4 +34,4 @@ This Script shows the Update Settings on a specified machine
    limitations under the License.
 
 # Feed my Caffine Addiction
-if any of this is usefull : [![ko-fi](https://www.ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z21XJ08)
+if any of this is useful : [![ko-fi](https://www.ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z21XJ08)
