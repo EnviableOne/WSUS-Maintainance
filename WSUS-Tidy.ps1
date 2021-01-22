@@ -4,10 +4,12 @@ Param()
 
 $DomainName = "."+ $env:USERDNSDOMAIN
 $dateText = (Get-Date).ToString('MM-dd-yyyy_hh-mm-ss')
+$ReportPath = "C:\wsus-reports"
 
-# Create empty arrays to contain collected data.
+# Create empty arrays and hashtables to contain collected data.
 $UpdateStatus = @()
-$SummaryStatus = @()		
+$SummaryStatus = @()
+$Comps = @{}
 
 # WSUS servers in environment
 $WSUSServers = ("wsus-pcs","wsus-com","wsus-servers","WSUS-3","WSUS-4","WSUS-5","WSUS-6","WSUS-7","WSUS-8","WSUS-9")
@@ -15,10 +17,21 @@ $WSUSServers = ("wsus-pcs","wsus-com","wsus-servers","WSUS-3","WSUS-4","WSUS-5",
 $ServerCount = ($WSUSServers | measure).count
 $CurrentServer = 0
 
-$thisDir = try{ Split-Path -Parent $MyInvocation.MyCommand.Path} Catch {"C:\wsus-reports\transcripts\"}
+$thisDir = try{ Split-Path -Parent $MyInvocation.MyCommand.Path} Catch {"$ReportPath\transcripts\"}
 $logFile = "WSUSDeadCleanUP_$dateText.txt"
-$allComp = (Get-ADComputer -Filter *) + (Get-ADComputer -Filter * -SearchBase "DC=contoso,DC=uk" -server "contoso.uk")
-$allCompCount = ($allComp).count
+#set filter
+If (!$Disabled){
+ $filter = '*'
+}
+Else{
+ $filter = {Enabled -eq $true}
+}
+#get Machines from AD
+$allComp = (Get-ADComputer -Filter $filter) + (Get-ADComputer -Filter $filter -SearchBase "DC=contoso,DC=com" -server "contoso.com")
+foreach ($comp in $allComp){
+    $Comps.Add($comp.dnshostname,$comp)
+}
+$allCompCount = $Comps.count
 Start-Transcript -Path $thisDir\$logFile
 
 ForEach ($WSUSServer in $WSUSServers) {		
@@ -39,7 +52,7 @@ ForEach ($WSUSServer in $WSUSServers) {
         $WSUSMCsCount = ($WSUSMCs).count
         Write-Verbose "Hosts in $WSUSServer : $WSUSMCsCount"
         Write-verbose "Checking $WSUSServer Hosts vs Active Directory ..."
-        $Deadcomp = $WSUSMCs | where {($_.FullDomainName) -notin ($allComp.dnshostname)}
+        $Deadcomp = $WSUSMCs | where {!$comps.ContainsKey($_.FullDomainName)}
         $deadcompcount = ($deadcomp).count
         Write-Verbose "done."
         Write-verbose "Macines in AD = $AllCompCount, Machines in $WSUSServer = $WSUSMCsCount, Machines in $WSUSServer not in AD = $DeadcompCount"
