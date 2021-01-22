@@ -1,5 +1,7 @@
 [cmdletbinding()]
-Param()
+Param(
+ [switch]$Disabled
+)
 [void][reflection.assembly]::LoadWithPartialName("Microsoft.UpdateServices.Administration")
 
 $DomainName = "."+ $env:USERDNSDOMAIN
