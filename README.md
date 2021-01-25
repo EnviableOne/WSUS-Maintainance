@@ -3,8 +3,8 @@ Powershell scripts to Audit and Maintain WSUS In an enterprise environment
 
 This is a collection of Powershell Scripts with specific tasks to maintain the WSUS configuration
 the originals were posted By Nitish Kumar on his blog https://nitishkumar.net/ (marked with \*)
-the functions of them are largley unchanged, a lot of variables have been renamed for clarity, and a few modifications have been made to improve error handling and speed. <br>
-The remaining script(s) have been inspired by the originals, but are all my own work.<br>
+the functions of them are largley unchanged, a lot of variables have been renamed for clarity, and modifications have been made to improve error handling and speed. <br>
+The remaining script(s) have been inspired by the originals, are my work, or those attributed<br>
 These Scripts work considerably better when regular maintainance on the WSUS Database has been carried out as Per: <br>
 https://docs.microsoft.com/en-us/troubleshoot/mem/configmgr/wsus-maintenance-guide
 
@@ -19,6 +19,9 @@ This Script Identifies information on WSUS servers that does not relate to Machi
 
 # Get-WSUS-Settings
 This Script shows the Update Settings on a specified machine
+
+# Get-WSUS-AppPoolSettings
+This scriptchecks the IIS Settings of listed WSUS Servers for comparison against Best Practice
 
 # Licence
    Copyright {2021} {Enviable Network Support and Solutions Ltd.}
