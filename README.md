@@ -21,7 +21,7 @@ This Script Identifies information on WSUS servers that does not relate to Machi
 This Script shows the Update Settings on a specified machine
 
 # Get-WSUS-AppPoolSettings
-This scriptchecks the IIS Settings of listed WSUS Servers for comparison against Best Practice
+This script connects remotley to WSUS Servers and checks the IIS Settings for comparison against Best Practice
 
 # Licence
    Copyright {2021} {Enviable Network Support and Solutions Ltd.}
