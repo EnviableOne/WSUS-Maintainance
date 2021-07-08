@@ -38,18 +38,18 @@
 
 .LINK
     Original Code - https://nitishkumar.net/2017/03/08/wsus-and-powershell-audit-compliance-report-and-automatic-cleanup/
-    Version 2.0   - https://github.com/EnviableOne/WSUS-Maintainance
+    Version 2.0+   - https://github.com/EnviableOne/WSUS-Maintainance
 #>
 
 [void][reflection.assembly]::LoadWithPartialName("Microsoft.UpdateServices.Administration") 
 
 # For all WSUS servers in Environment
 # cleanup in reverse tier order (i.e. downstream first)
-$WsusServers = ("wsus-pcs","wsus-com") #tier 1 (have downstream servers)
-#$WSUSServers = ("wsus-servers","wsus-pcs2","wsus-3","wsus-5","wsus-6","wsus-8","wsus-9","wsus-12","wsus-13","wsus-14") #Tier 2 (have no downstream servers)
+#$WsusServers = ("wsus-pcs","wsus-com") #tier 1 (have downstream servers)
+$WSUSServers = ("wsus-servers","wsus-pcs2","WSUS-3","WSUS-5","WSUS-8","WSUS-9","WSUS-12","WSUS-13","WSUS-14","WSUS-15","WSUS-16") #Tier 2 (have no downstream Servers)
 
 # In case need to check for some individual server or few particular servers
-#$WSUSServers = ("wsus-6","wsus-13")
+#$WSUSServers = ("wsus-pcs3")
 
 $AllWSUSCount = ($WSUSServers | measure).count
 $WorkingonWSUS = 0
@@ -64,43 +64,12 @@ Start-Transcript -Path $thisDir\$logFile
 [bool]$expiredUpdates = $True        #Decline
 [bool]$obsoleteUpdates = $True       #Delete
 [bool]$compressUpdates = $false      #Compress
-[bool]$obsoleteComputers = $True     #Delete
-[bool]$unneededContentFiles = $False #Delete
-
-Write-host "Stopping Syncronisation" -ForegroundColor Green
-foreach ($WSUSServer in $WSUSServers) {
- Try { 
-        Try {
-            $WSUS = Get-WSUSServer -name $WSUSServer -port 8530
-        }
-        Catch {
-            $WSUS = Get-WSUSServer -name $WSUSServer -port 80
-        }
-        Write-Host ("Connected to {0}. Stopping Syncronisation ..." -f $WSUS.Name) -foregroundcolor DarkGray -nonewline
-        $sub = $wsus.GetSubscription()
-        $sub.StopSynchronization() 
-        $sub.SynchronizeAutomatically = $false
-        $sub.Save()
-        #Set-WSUSServerSync -updateServer $wsus -replica:$false -USS ""
-        Write-Host "done" -foregroundcolor Green
- }
- Catch [Exception] {
-        if($wsus.name -ne $WSUSServer){
-         Write-Host "Failed to connect to $WsusServer" -ForegroundColor white -BackgroundColor Red
-        }
-        Else{
-         Write-Host "error." -ForegroundColor white -BackgroundColor Red
-        }
-        write-host $_.Exception.GetType().FullName -ForegroundColor white -BackgroundColor Red
-	    write-host $_.Exception.Message -ForegroundColor white -BackgroundColor Red
-        continue;
- }
- 
-}
+[bool]$obsoleteComputers = $false     #Delete
+[bool]$unneededContentFiles = $True  #Delete
 
 #cleanup hosts
 ForEach ($WSUSServer in $WSUSServers) {
-    $WorkingonWSUS = $WorkingonWSUS + 1
+    $WorkingonWSUS++
     #Read-Host "Put $WSUSServer into maintenance mode. Once done,press Enter to continue ..." | Out-Null
 
     write-host "Working on $WSUSServer ($WorkingonWSUS of $AllWSUSCount) ..."	-foregroundcolor Green
@@ -111,47 +80,29 @@ ForEach ($WSUSServer in $WSUSServers) {
         Catch {
             $WSUS = Get-WSUSServer -name $WSUSServer -port 80
         }
-	    write-host "Connected with $WSUSServer ($WorkingonWSUS of $AllWSUSCount) and proceeding for cleanup ..."	-foregroundcolor Yellow
-	    ##CleanupScope(bool supersededUpdates,bool expiredUpdates,bool obsoleteUpdates,bool compressUpdates,bool obsoleteComputers,bool unneededContentFiles)
+	    write-host "Connected with $WSUSServer ($WorkingonWSUS of $AllWSUSCount) and stopping sync ..."	-foregroundcolor DarkYellow -NoNewline
+        $sub = $wsus.GetSubscription()
+        $sub.StopSynchronization() 
+        $sub.SynchronizeAutomatically = $false
+        $sub.Save()
+	    Write-Host "done." -ForegroundColor DarkGray
 	    $cleanupScope = new-object Microsoft.UpdateServices.Administration.CleanupScope($supersededUpdates,$expiredUpdates,$obsoleteUpdates,$compressUpdates,$obsoleteComputers,$unneededContentFiles); 
-        write-host "Starting Cleanup on $WSUSServer ($WorkingonWSUS of $AllWSUSCount) ..."
+        write-host "Starting Cleanup on $WSUSServer ($WorkingonWSUS of $AllWSUSCount) ..." -foregroundcolor Green
 	    $cleanupManager = $WSUS.GetCleanupManager();
 	    $cleanupManager.PerformCleanup($cleanupScope); 
-    	write-host "Cleaning done for $WSUSServer ($WorkingonWSUS of $AllWSUSCount)" -ForegroundColor Darkgray
+    	write-host "Cleaning done for $WSUSServer ($WorkingonWSUS of $AllWSUSCount)" -ForegroundColor Gray
     }
     Catch [Exception] {
         write-host $_.Exception.GetType().FullName -ForegroundColor white -BackgroundColor Red
 	    write-host $_.Exception.Message -ForegroundColor white -BackgroundColor Red
 	    continue;
     }
-}
-
-Write-host "Restart syncronisation" -foregroundcolor Green
-foreach ($wsusserver in $WSUSServers) {
- Try { 
-        Try {
-            $WSUS = Get-WSUSServer -name $WSUSServer -port 8530
-        }
-        Catch {
-            $WSUS = Get-WSUSServer -name $WSUSServer -port 80
-        }
-        Write-Host ("Connected to {0}. Starting Syncronisation ..." -f $WSUS.Name) -foregroundcolor DarkGray -nonewline
-        $sub = $wsus.GetSubscription()
-        $sub.SynchronizeAutomatically = $True
-        $sub.Save()
-        write-host "done" -ForegroundColor Green
-        #Set-WSUSServerSync -updateServer $wsus -replica:$false -USS ""
- }
- Catch [Exception] {
-        if($wsus.name -ne $WSUSServer){
-         Write-Host "Failed to connect to $WsusServer" -ForegroundColor white -BackgroundColor Red
-        }
-        Else{
-         Write-Host "error." -foregroundcolor white -BackgroundColor Red
-        }
-        write-host $_.Exception.GetType().FullName -ForegroundColor white -BackgroundColor Red
-	    write-host $_.Exception.Message -ForegroundColor white -BackgroundColor Red
-	    continue;
+    finally{
+     Write-Host "Restarting Sync..." -NoNewline -ForegroundColor DarkYellow
+     if(!$sub){ $sub=$wsus.GetSubscription()}
+     $sub.SynchronizeAutomatically = $True
+     $sub.Save()
+     Write-Host "done." -ForegroundColor DarkGray
     }
 }
 
