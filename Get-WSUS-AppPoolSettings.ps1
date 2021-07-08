@@ -56,21 +56,28 @@ Param(
 )
 
 # WSUS servers in environment
-$WSUSServers = ("wsus-pcs","wsus-com","wsus-servers","wsus-pcs2","WSUS-3","WSUS-5","WSUS-6","WSUS-8","WSUS-9","WSUS-12","WSUS-13","WSUS-14","WSUS-15","WSUS-16")
+$WSUSServers = $AllWSUSServers
+#$WSUSServers = ("wsus-pcs3")
 
 #Initialise Variables
 $Results = @()
 $CurrentServer=0
 $ServerCount = $WSUSServers.Count
-$ReportPath = "C:\wsus-reports"
+$ReportPath = "D:\wsus-reports"
 $dateText = (Get-Date).ToString('MM-dd-yyyy_hh-mm-ss')
 $AdmCreds = (Get-Credential -Message "Please Enter Valid Credentials to Access WSUS Servers")
 
 ForEach ($WSUSServer in $WSUSServers) {		
  $CurrentServer++
- write-host "Connecting to $WSUSServer (Server $CurrentServer of $ServerCount) ..."	-foregroundcolor Green -NoNewline
- $sess = New-PSSession -ComputerName $WSUSServer -Credential $AdmCreds
- Write-host "Connected and Fetching config ..." -ForegroundColor Gray -NoNewline
+ write-host "Connecting to $WSUSServer (Server $CurrentServer of $ServerCount) ... "	-foregroundcolor Green -NoNewline
+ Try{
+  $sess = New-PSSession -ComputerName $WSUSServer -Credential $AdmCreds -ErrorAction Stop
+  Write-host "Connected and Fetching config ... " -ForegroundColor Gray -NoNewline
+ }
+ Catch {
+  Write-host "failed" -ForegroundColor Red
+  continue
+ }
  
  $config = Invoke-command -Session $sess -ScriptBlock {
   Import-module WebAdministration
@@ -96,6 +103,7 @@ ForEach ($WSUSServer in $WSUSServers) {
   [Xml]$XMLConf = gc 'C:\Program Files\Update Services\webservices\ClientWebService\Web.config'
   $MaxReq = $xmlconf.configuration.'system.web'.httpRuntime.maxRequestLength
   $ExecTim = $xmlconf.configuration.'system.web'.httpRuntime.executionTimeout
+  $OSVER = (Get-CimInstance Win32_OperatingSystem).version
   $IISVER = [System.Diagnostics.FileVersionInfo]::GetVersionInfo("$env:SystemRoot\system32\inetsrv\InetMgr.exe").ProductVersion
   $Config = New-Object psobject
    $Config | Add-Member -MemberType NoteProperty -Name ServerName -Value $using:WSUSServer
@@ -108,13 +116,14 @@ ForEach ($WSUSServer in $WSUSServers) {
    $Config | Add-Member -MemberType NoteProperty -Name MaxReqLen -value $MaxReq
    $Config | Add-Member -MemberType NoteProperty -Name ExecTimeout -Value $ExecTim
    $Config | Add-Member -MemberType NoteProperty -Name IISVer -Value $IISVER
+   $config | Add-Member -MemberType NoteProperty -Name OSVer -Value $OSVER
   $Config
  } -HideComputerName
  $Results += $Config
  Remove-PSSession $sess
  write-Host "done"
 }
-$out = $Results | Select ServerName,QueueLength,IdleTimeout,PingEnabled,PvtMemLimit,RegTimeInt,RamGB,MaxReqLen,ExecTimeout,IISVer
+$out = $Results | Select ServerName,QueueLength,IdleTimeout,PingEnabled,PvtMemLimit,RegTimeInt,RamGB,MaxReqLen,ExecTimeout,IISVer,OSVer
 If(!$ToFile){
  $out | ft -AutoSize
 }
