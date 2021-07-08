@@ -15,6 +15,10 @@ This script performs a customisable WSUS Clean-up on all Servers and provides a 
 * **WSUS-Tidy**<br>
 This Script Identifies information on WSUS servers that does not relate to Machines joined to the AD domain and optionally removes them from each WSUS Server
 
+* **WSUS-Approvals**<br>
+This script collects information from WSUS servers to track delay between release, approval and Installation.
+The installation date is taken from the last install summary, so might not be close enough, but the best i could do without connecting to the targets individualy
+
 * **Get-WSUS-Settings**<br>
 This Script shows the Update Settings on a specified machine
 
