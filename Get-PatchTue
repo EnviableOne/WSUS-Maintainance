@@ -1,0 +1,25 @@
+# I can't remeber where the origonal of this came from, but the idea is simple
+# basically it cycles through the Days Of the Month until it finds the second Tuesday
+# i think the origonal was a bit more generic and went through 1 to 31, but patch
+# Tuesday will always be before the 14 th
+
+function Get-PatchTue { 
+ <#  
+  .SYNOPSIS   
+    Get the Patch Tuesday of a month 
+  .PARAMETER month 
+   The month to check
+  .PARAMETER year 
+   The year to check
+  .EXAMPLE  
+   Get-PatchTue -month 6 -year 2015
+  .EXAMPLE  
+   Get-PatchTue June 2015
+ #> 
+ param( 
+  [string]$month = (get-date).month, 
+  [string]$year = (get-date).year
+ ) 
+ $firstdayofmonth = [datetime] ([string]$month + "/1/" + [string]$year)
+ (0..14 | % {$firstdayofmonth.adddays($_) } | ? {[int]$_.dayofweek -eq 2})[1]
+}
