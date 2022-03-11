@@ -1,4 +1,4 @@
-# WSUS-Database Maintainance<br>
+# SUSDB SQL-Queries<br>
 the following SQL scripts wer collected from microsoft and various individuals, and perform optimisations and cleanup operations directly on the SUSDB database within the Windows Internal Database.
 
 * **WSUS-AddIndexes**<br>
